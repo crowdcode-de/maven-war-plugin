@@ -65,7 +65,7 @@ import org.codehaus.plexus.archiver.manager.ArchiverManager;
  * Contains common jobs for WAR mojos.
  */
 public abstract class AbstractWarMojo
-    extends AbstractMojo
+        extends AbstractMojo
 {
     private static final String META_INF = "META-INF";
 
@@ -151,7 +151,7 @@ public abstract class AbstractWarMojo
      * <p>
      * So, the default filtering delimiters might be specified as:
      * </p>
-     * 
+     *
      * <pre>
      * &lt;delimiters&gt;
      *   &lt;delimiter&gt;${*}&lt;/delimiter&gt;
@@ -331,7 +331,7 @@ public abstract class AbstractWarMojo
 
     /**
      * Stop searching endToken at the end of line
-     * 
+     *
      * @since 2.4
      */
     @Parameter( defaultValue = "false" )
@@ -339,11 +339,19 @@ public abstract class AbstractWarMojo
 
     /**
      * use jvmChmod rather that cli chmod and forking process
-     * 
+     *
      * @since 2.4
      */
     @Parameter( defaultValue = "true" )
     private boolean useJvmChmod;
+
+    /**
+     * To filter deployment descriptors. <b>Disabled by default.</b>
+     *
+     * @since 3.2.4
+     */
+    @Parameter( defaultValue = "false" )
+    private boolean disableOverlaying;
 
     /**
      * The archive configuration to use. See <a href="http://maven.apache.org/shared/maven-archiver/index.html">Maven
@@ -426,7 +434,7 @@ public abstract class AbstractWarMojo
      * @throws MojoFailureException In case of failure.
      */
     public void buildExplodedWebapp( File webapplicationDirectory )
-        throws MojoExecutionException, MojoFailureException
+            throws MojoExecutionException, MojoFailureException
     {
         webapplicationDirectory.mkdirs();
 
@@ -451,18 +459,21 @@ public abstract class AbstractWarMojo
      * @throws IOException if an error occurred while copying the files
      */
     public void buildWebapp( MavenProject mavenProject, File webapplicationDirectory )
-        throws MojoExecutionException, MojoFailureException, IOException
+            throws MojoExecutionException, MojoFailureException, IOException
     {
 
         WebappStructure structure = new WebappStructure( mavenProject.getDependencies() );
 
         // CHECKSTYLE_OFF: LineLength
         final long startTime = System.currentTimeMillis();
-        getLog().info( "Assembling webapp [" + mavenProject.getArtifactId() + "] in [" + webapplicationDirectory + "]" );
+        getLog().info( "Assembling webapp [" + mavenProject.getArtifactId() + "] in ["
+                + webapplicationDirectory + "]" );
 
         final OverlayManager overlayManager =
-            new OverlayManager( overlays, mavenProject, getDependentWarIncludes(), getDependentWarExcludes(),
-                                currentProjectOverlay );
+                new OverlayManager( overlays, mavenProject, ( disableOverlaying
+                        ? new  String[0]
+                        : getDependentWarIncludes() ), getDependentWarExcludes(),
+                        currentProjectOverlay );
         // CHECKSTYLE_ON: LineLength
         List<FileUtils.FilterWrapper> defaultFilterWrappers;
         try
@@ -479,7 +490,7 @@ public abstract class AbstractWarMojo
             {
                 mavenResourcesExecution.setNonFilteredFileExtensions( nonFilteredFileExtensions );
             }
-            
+
             if ( filters == null )
             {
                 filters = getProject().getBuild().getFilters();
@@ -500,9 +511,10 @@ public abstract class AbstractWarMojo
         }
 
         final WarPackagingContext context =
-            new DefaultWarPackagingContext( webapplicationDirectory, structure, overlayManager, defaultFilterWrappers,
-                                            getNonFilteredFileExtensions(), filteringDeploymentDescriptors,
-                                            this.artifactFactory, resourceEncoding, useJvmChmod, failOnMissingWebXml );
+                new DefaultWarPackagingContext( webapplicationDirectory, structure, overlayManager
+                        , defaultFilterWrappers, getNonFilteredFileExtensions(), filteringDeploymentDescriptors
+                        , this.artifactFactory, resourceEncoding, useJvmChmod
+                        , failOnMissingWebXml );
 
         final List<WarPackagingTask> packagingTasks = getPackagingTasks( overlayManager );
 
@@ -524,7 +536,7 @@ public abstract class AbstractWarMojo
      * @throws MojoExecutionException if the packaging tasks could not be built
      */
     private List<WarPackagingTask> getPackagingTasks( OverlayManager overlayManager )
-        throws MojoExecutionException
+            throws MojoExecutionException
     {
         final List<WarPackagingTask> packagingTasks = new ArrayList<>();
 
@@ -536,11 +548,18 @@ public abstract class AbstractWarMojo
             if ( overlay.isCurrentProject() )
             {
                 packagingTasks.add( new WarProjectPackagingTask( webResources, webXml, containerConfigXML,
-                                                                 currentProjectOverlay ) );
+                        currentProjectOverlay ) );
             }
             else
             {
-                packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
+                if ( !disableOverlaying )
+                {
+                    packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
+                }
+                else
+                {
+                    getLog().info( "Overlaying disabled: Skipped " + overlay.getArtifactId() );
+                }
             }
         }
         return packagingTasks;
@@ -550,7 +569,7 @@ public abstract class AbstractWarMojo
      * WarPackagingContext default implementation
      */
     private class DefaultWarPackagingContext
-        implements WarPackagingContext
+            implements WarPackagingContext
     {
         private final ArtifactFactory artifactFactory;
 
@@ -587,12 +606,12 @@ public abstract class AbstractWarMojo
          * @param failOnMissingWebXml Flag to check whether we should ignore missing web.xml or not
          */
         DefaultWarPackagingContext( final File webappDirectory, final WebappStructure webappStructure,
-                                           final OverlayManager overlayManager,
-                                           List<FileUtils.FilterWrapper> filterWrappers,
-                                           List<String> nonFilteredFileExtensions,
-                                           boolean filteringDeploymentDescriptors, ArtifactFactory artifactFactory,
-                                           String resourceEncoding, boolean useJvmChmod,
-                                           final Boolean failOnMissingWebXml )
+                                    final OverlayManager overlayManager,
+                                    List<FileUtils.FilterWrapper> filterWrappers,
+                                    List<String> nonFilteredFileExtensions,
+                                    boolean filteringDeploymentDescriptors, ArtifactFactory artifactFactory,
+                                    String resourceEncoding, boolean useJvmChmod,
+                                    final Boolean failOnMissingWebXml )
         {
             this.webappDirectory = webappDirectory;
             this.webappStructure = webappStructure;
@@ -601,7 +620,7 @@ public abstract class AbstractWarMojo
             this.artifactFactory = artifactFactory;
             this.filteringDeploymentDescriptors = filteringDeploymentDescriptors;
             this.nonFilteredFileExtensions =
-                nonFilteredFileExtensions == null ? Collections.<String>emptyList() : nonFilteredFileExtensions;
+                    nonFilteredFileExtensions == null ? Collections.<String>emptyList() : nonFilteredFileExtensions;
             this.resourceEncoding = resourceEncoding;
             // This is kinda stupid but if we loop over the current overlays and we request the path structure
             // it will register it. This will avoid wrong warning messages in a later phase
@@ -630,7 +649,7 @@ public abstract class AbstractWarMojo
                     {
                         @Override
                         public FileVisitResult visitFile( Path file, BasicFileAttributes attrs )
-                            throws IOException
+                                throws IOException
                         {
                             outdatedResources.add( webappDirectory.toPath().relativize( file ).toString() );
                             return super.visitFile( file, attrs );
