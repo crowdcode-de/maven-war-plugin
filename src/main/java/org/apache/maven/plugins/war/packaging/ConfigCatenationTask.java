@@ -29,7 +29,6 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 
@@ -52,7 +51,8 @@ public class ConfigCatenationTask
      * @param overlay {@link #overlay}
      * @param destinationDirectory
      */
-    public ConfigCatenationTask(Overlay overlay, boolean unpackRequired, File destinationDirectory, String... includes)
+    public ConfigCatenationTask( Overlay overlay, boolean unpackRequired, File destinationDirectory,
+                                 String... includes )
     {
         this.unpackRequired = unpackRequired;
         this.destinationDirectory = destinationDirectory;
@@ -65,32 +65,43 @@ public class ConfigCatenationTask
     }
 
     @Override
-    public void performPackaging(WarPackagingContext context)
-            throws MojoExecutionException {
-        context.getLog().debug("ConfigCatenationTask: perform catenation overlay.getTargetPath() "
-                + overlay.getTargetPath());
-        if (overlay.shouldSkip()) {
-            context.getLog().info("Skipping catenation on  [" + overlay + "]");
-        } else {
-            try {
-                context.getLog().info("Processing catenation on [" + overlay + "]");
+    public void performPackaging( WarPackagingContext context )
+            throws MojoExecutionException
+    {
+        context.getLog()
+                .debug( "ConfigCatenationTask: perform catenation overlay.getTargetPath() "
+                + overlay.getTargetPath() );
+        if ( overlay.shouldSkip() )
+        {
+            context.getLog().info( "Skipping catenation on  [" + overlay + "]" );
+        }
+        else
+        {
+            try
+            {
+                context.getLog().info( "Processing catenation on [" + overlay + "]" );
 
                 final File tmpDir;
-                if (unpackRequired) {
+                if ( unpackRequired )
+                {
                     // Step1: Extract if necessary
-                    tmpDir = unpackOverlay(context, overlay);
-                } else {
+                    tmpDir = unpackOverlay( context, overlay );
+                }
+                else
+                {
                     tmpDir = context.getWebappSourceDirectory();
                 }
 
                 // Step2: setup
-                final PathSet includes = getFilesToIncludes(tmpDir, this.includes,null, false);
+                final PathSet includes = getFilesToIncludes( tmpDir, this.includes, null,  false );
 
 
                 processFiles( overlay.getId(), context, tmpDir, includes, this.destinationDirectory );
 
-            } catch (IOException e) {
-                throw new MojoExecutionException("Failed to catenate file from overlay overlay [" + overlay + "]", e);
+            }
+            catch ( IOException e )
+            {
+                throw new MojoExecutionException( "Failed to catenate file from overlay overlay [" + overlay + "]", e );
             }
         }
     }
@@ -112,11 +123,14 @@ public class ConfigCatenationTask
      * @throws IOException            if an error occurred while copying the files
      * @throws MojoExecutionException if an error occurs.
      */
-    protected void processFiles(String sourceId, WarPackagingContext context, File sourceBaseDir, PathSet sourceFilesSet, File outputFile)
-            throws IOException, MojoExecutionException {
-        for (String fileToCopyName : sourceFilesSet.paths()) {
-            final File sourceFile = new File(sourceBaseDir, fileToCopyName);
-            processFile(sourceId, context, sourceFile, outputFile);
+    protected void processFiles( String sourceId, WarPackagingContext context, File sourceBaseDir,
+                                PathSet sourceFilesSet, File outputFile )
+            throws IOException, MojoExecutionException
+    {
+        for ( String fileToCopyName : sourceFilesSet.paths() )
+        {
+            final File sourceFile = new File( sourceBaseDir, fileToCopyName );
+            processFile( sourceId, context, sourceFile, outputFile );
 
         }
     }
@@ -132,19 +146,23 @@ public class ConfigCatenationTask
      * @throws IOException if an error occurred while copying
      */
     // CHECKSTYLE_OFF: LineLength
-    protected void processFile(String sourceId, final WarPackagingContext context, final File file, File targetFile)
-            throws IOException {
-        if (file.isFile()) {
-            context.getLog().info("Catenating "+file.getName()+" to "+targetFile.getAbsolutePath().toString());
+    protected void processFile( String sourceId, final WarPackagingContext context, final File file, File targetFile )
+            throws IOException
+    {
+        if ( file.isFile() )
+        {
+            context.getLog().info(  "Catenating "
+                    + file.getName()
+                    + " to " +  targetFile.getAbsolutePath().toString() );
             targetFile.getParentFile().mkdirs();
 
             // Charset for read and write
             Charset charset = StandardCharsets.ISO_8859_1;
 
 
-            List<String> lines = Files.readAllLines(file.toPath(), charset);
-            Files.write(targetFile.toPath(), lines, charset, StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND);
+            List<String> lines = Files.readAllLines( file.toPath(), charset );
+            Files.write( targetFile.toPath(), lines, charset, StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND );
         }
     }
 

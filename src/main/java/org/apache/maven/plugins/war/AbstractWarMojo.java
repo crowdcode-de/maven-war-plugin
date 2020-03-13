@@ -44,7 +44,11 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.war.overlay.OverlayManager;
-import org.apache.maven.plugins.war.packaging.*;
+import org.apache.maven.plugins.war.packaging.ConfigCatenationTask;
+import org.apache.maven.plugins.war.packaging.CopyUserManifestTask;
+import org.apache.maven.plugins.war.packaging.WarPackagingContext;
+import org.apache.maven.plugins.war.packaging.WarPackagingTask;
+import org.apache.maven.plugins.war.packaging.WarProjectPackagingTask;
 import org.apache.maven.plugins.war.util.WebappStructure;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.filtering.MavenFileFilter;
@@ -374,7 +378,8 @@ public abstract class AbstractWarMojo
     private String catenationInfile;
 
     /**
-     * last files to catenate to the target during the war assembly. this is only taken from the root project <b>Disabled by default.</b>
+     * last files to catenate to the target during the war assembly. this is only taken from the root project
+     * <b>Disabled by default.</b>
      *
      * @since 3.2.4
      */
@@ -592,19 +597,25 @@ public abstract class AbstractWarMojo
                 }
             }
 
-            if (catenateConfig){
-                if (!overlay.isCurrentProject() ) {
-                    catenationTasks.add(new ConfigCatenationTask(overlay, true, catenatedOutFile, catenationInfile));
+            if ( catenateConfig )
+            {
+                if ( !overlay.isCurrentProject() )
+                {
+                    catenationTasks.add( new ConfigCatenationTask( overlay, true, catenatedOutFile,
+                            catenationInfile ) );
                 }
             }
         }
-        Collections.reverse(catenationTasks);
-        catenationTasks.add(new ConfigCatenationTask(currentProjectOverlay, false, catenatedOutFile, catenationInfile));
+        Collections.reverse( catenationTasks );
+        catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, false, catenatedOutFile,
+                catenationInfile ) );
 
-        if (catenationFinalizer != null && !catenationFinalizer.trim().isEmpty()) {
-            catenationTasks.add(new ConfigCatenationTask(currentProjectOverlay, false, catenatedOutFile, catenationFinalizer));
+        if ( catenationFinalizer != null && !catenationFinalizer.trim().isEmpty() )
+        {
+            catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, false, catenatedOutFile,
+                    catenationFinalizer ) ) ;
         }
-        packagingTasks.addAll(catenationTasks);
+        packagingTasks.addAll( catenationTasks );
 
         return packagingTasks;
     }
@@ -666,7 +677,8 @@ public abstract class AbstractWarMojo
                                    List<String> nonFilteredFileExtensions,
                                    boolean filteringDeploymentDescriptors, ArtifactFactory artifactFactory,
                                    String resourceEncoding, boolean useJvmChmod,
-                                   final Boolean failOnMissingWebXml, boolean catenateConfig, File catenatedOutFile, String infile )
+                                   final Boolean failOnMissingWebXml, boolean catenateConfig, File catenatedOutFile,
+                                    String infile )
         {
             this.webappDirectory = webappDirectory;
             this.webappStructure = webappStructure;
@@ -1198,10 +1210,17 @@ public abstract class AbstractWarMojo
 
     public boolean isCatenateConfig()
     {
-        return catenateConfig; }
+        return catenateConfig;
+    }
 
-    public File getCatenatedOutFile() { return catenatedOutFile; }
+    public File getCatenatedOutFile()
+    {
+        return catenatedOutFile;
+    }
 
-    public String getCatenationInfile() { return catenationInfile; }
+    public String getCatenationInfile()
+    {
+        return catenationInfile;
+    }
 }
 

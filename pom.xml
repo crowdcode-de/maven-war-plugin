@@ -168,12 +168,12 @@
     </resources>
     <pluginManagement>
       <plugins>
-        <plugin>
-          <artifactId>maven-checkstyle-plugin</artifactId>
-          <configuration>
-            <skip>true</skip>
-          </configuration>
-        </plugin>
+<!--        <plugin>-->
+<!--          <artifactId>maven-checkstyle-plugin</artifactId>-->
+<!--          <configuration>-->
+<!--            <skip>true</skip>-->
+<!--          </configuration>-->
+<!--        </plugin>-->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-enforcer-plugin</artifactId>
