@@ -44,11 +44,7 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.war.overlay.OverlayManager;
-import org.apache.maven.plugins.war.packaging.CopyUserManifestTask;
-import org.apache.maven.plugins.war.packaging.OverlayPackagingTask;
-import org.apache.maven.plugins.war.packaging.WarPackagingContext;
-import org.apache.maven.plugins.war.packaging.WarPackagingTask;
-import org.apache.maven.plugins.war.packaging.WarProjectPackagingTask;
+import org.apache.maven.plugins.war.packaging.*;
 import org.apache.maven.plugins.war.util.WebappStructure;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.filtering.MavenFileFilter;
@@ -346,12 +342,45 @@ public abstract class AbstractWarMojo
     private boolean useJvmChmod;
 
     /**
-     * To filter deployment descriptors. <b>Disabled by default.</b>
+     * To hinder the plugin performing overlays even if there are war files in the path. <b>Disabled by default.</b>
      *
      * @since 3.2.4
      */
     @Parameter( defaultValue = "false" )
     private boolean disableOverlaying;
+
+    /**
+     * To catenate configuration files during the war assembly. <b>Disabled by default.</b>
+     *
+     * @since 3.2.4
+     */
+    @Parameter( defaultValue = "false" )
+    private boolean catenateConfig;
+
+    /**
+     * To catenate configuration files during the war assembly. <b>Disabled by default.</b>
+     *
+     * @since 3.2.4
+     */
+    @Parameter( required = false )
+    private File catenatedOutFile;
+
+    /**
+     * source file to catenate configuration files during the war assembly. <b>Disabled by default.</b>
+     *
+     * @since 3.2.4
+     */
+    @Parameter( required = false )
+    private String catenationInfile;
+
+    /**
+     * last files to catenate to the target during the war assembly. this is only taken from the root project <b>Disabled by default.</b>
+     *
+     * @since 3.2.4
+     */
+    @Parameter( required = false )
+    private String catenationFinalizer;
+
 
     /**
      * The archive configuration to use. See <a href="http://maven.apache.org/shared/maven-archiver/index.html">Maven
@@ -514,7 +543,7 @@ public abstract class AbstractWarMojo
                 new DefaultWarPackagingContext( webapplicationDirectory, structure, overlayManager
                         , defaultFilterWrappers, getNonFilteredFileExtensions(), filteringDeploymentDescriptors
                         , this.artifactFactory, resourceEncoding, useJvmChmod
-                        , failOnMissingWebXml );
+                        , failOnMissingWebXml, catenateConfig, catenatedOutFile, catenationInfile );
 
         final List<WarPackagingTask> packagingTasks = getPackagingTasks( overlayManager );
 
@@ -539,6 +568,7 @@ public abstract class AbstractWarMojo
             throws MojoExecutionException
     {
         final List<WarPackagingTask> packagingTasks = new ArrayList<>();
+        final List<WarPackagingTask> catenationTasks = new ArrayList<>();
 
         packagingTasks.add( new CopyUserManifestTask() );
 
@@ -554,14 +584,28 @@ public abstract class AbstractWarMojo
             {
                 if ( !disableOverlaying )
                 {
-                    packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
+                   // packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
                 }
                 else
                 {
                     getLog().info( "Overlaying disabled: Skipped " + overlay.getArtifactId() );
                 }
             }
+
+            if (catenateConfig){
+                if (!overlay.isCurrentProject() ) {
+                    catenationTasks.add(new ConfigCatenationTask(overlay, true, catenatedOutFile, catenationInfile));
+                }
+            }
         }
+        Collections.reverse(catenationTasks);
+        catenationTasks.add(new ConfigCatenationTask(currentProjectOverlay, false, catenatedOutFile, catenationInfile));
+
+        if (catenationFinalizer != null && !catenationFinalizer.trim().isEmpty()) {
+            catenationTasks.add(new ConfigCatenationTask(currentProjectOverlay, false, catenatedOutFile, catenationFinalizer));
+        }
+        packagingTasks.addAll(catenationTasks);
+
         return packagingTasks;
     }
 
@@ -593,6 +637,14 @@ public abstract class AbstractWarMojo
 
         private final Collection<String> outdatedResources;
 
+        private final boolean catenateConfig;
+
+        private final File catenatedOutFile;
+
+        private final String infile;
+
+
+
         /**
          * @param webappDirectory The web application directory.
          * @param webappStructure The web app structure.
@@ -604,14 +656,17 @@ public abstract class AbstractWarMojo
          * @param resourceEncoding The resource encoding.
          * @param useJvmChmod use Jvm chmod or not.
          * @param failOnMissingWebXml Flag to check whether we should ignore missing web.xml or not
+         * @param catenateConfig
+         * @param catenatedOutFile
+         * @param infile
          */
         DefaultWarPackagingContext( final File webappDirectory, final WebappStructure webappStructure,
-                                    final OverlayManager overlayManager,
-                                    List<FileUtils.FilterWrapper> filterWrappers,
-                                    List<String> nonFilteredFileExtensions,
-                                    boolean filteringDeploymentDescriptors, ArtifactFactory artifactFactory,
-                                    String resourceEncoding, boolean useJvmChmod,
-                                    final Boolean failOnMissingWebXml )
+                                   final OverlayManager overlayManager,
+                                   List<FileUtils.FilterWrapper> filterWrappers,
+                                   List<String> nonFilteredFileExtensions,
+                                   boolean filteringDeploymentDescriptors, ArtifactFactory artifactFactory,
+                                   String resourceEncoding, boolean useJvmChmod,
+                                   final Boolean failOnMissingWebXml, boolean catenateConfig, File catenatedOutFile, String infile )
         {
             this.webappDirectory = webappDirectory;
             this.webappStructure = webappStructure;
@@ -622,6 +677,9 @@ public abstract class AbstractWarMojo
             this.nonFilteredFileExtensions =
                     nonFilteredFileExtensions == null ? Collections.<String>emptyList() : nonFilteredFileExtensions;
             this.resourceEncoding = resourceEncoding;
+            this.catenateConfig = catenateConfig;
+            this.catenatedOutFile = catenatedOutFile;
+            this.infile = infile;
             // This is kinda stupid but if we loop over the current overlays and we request the path structure
             // it will register it. This will avoid wrong warning messages in a later phase
             for ( String overlayId : overlayManager.getOverlayIds() )
@@ -1137,4 +1195,13 @@ public abstract class AbstractWarMojo
     {
         return includeEmptyDirectories;
     }
+
+    public boolean isCatenateConfig()
+    {
+        return catenateConfig; }
+
+    public File getCatenatedOutFile() { return catenatedOutFile; }
+
+    public String getCatenationInfile() { return catenationInfile; }
 }
+

@@ -30,7 +30,7 @@
   </parent>
 
   <artifactId>maven-war-plugin</artifactId>
-  <version>3.2.4-PATCHED</version>
+  <version>3.2.4-PATCHED-2</version>
   <packaging>maven-plugin</packaging>
 
   <name>Apache Maven WAR Plugin</name>
@@ -168,6 +168,12 @@
     </resources>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <artifactId>maven-checkstyle-plugin</artifactId>
+          <configuration>
+            <skip>true</skip>
+          </configuration>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-enforcer-plugin</artifactId>
