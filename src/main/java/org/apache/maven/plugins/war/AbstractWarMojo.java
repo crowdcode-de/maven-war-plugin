@@ -46,6 +46,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.war.overlay.OverlayManager;
 import org.apache.maven.plugins.war.packaging.ConfigCatenationTask;
 import org.apache.maven.plugins.war.packaging.CopyUserManifestTask;
+import org.apache.maven.plugins.war.packaging.OverlayPackagingTask;
 import org.apache.maven.plugins.war.packaging.WarPackagingContext;
 import org.apache.maven.plugins.war.packaging.WarPackagingTask;
 import org.apache.maven.plugins.war.packaging.WarProjectPackagingTask;
@@ -589,7 +590,7 @@ public abstract class AbstractWarMojo
             {
                 if ( !disableOverlaying )
                 {
-                   // packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
+                   packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
                 }
                 else
                 {
