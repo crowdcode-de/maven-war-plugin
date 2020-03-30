@@ -20,6 +20,7 @@ package org.apache.maven.plugins.war.packaging;
  */
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.war.Overlay;
 import org.apache.maven.plugins.war.util.PathSet;
 import org.codehaus.plexus.util.FileUtils;
@@ -30,6 +31,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -42,7 +44,7 @@ public class ConfigCatenationTask
 {
     private final Overlay overlay;
 
-    private final boolean unpackRequired;
+    private final boolean isRootPackage;
     private final File destinationDirectory;
     private final String[] includes;
 
@@ -51,10 +53,10 @@ public class ConfigCatenationTask
      * @param overlay {@link #overlay}
      * @param destinationDirectory
      */
-    public ConfigCatenationTask( Overlay overlay, boolean unpackRequired, File destinationDirectory,
+    public ConfigCatenationTask( Overlay overlay, boolean isRootPackage, File destinationDirectory,
                                  String... includes )
     {
-        this.unpackRequired = unpackRequired;
+        this.isRootPackage = isRootPackage;
         this.destinationDirectory = destinationDirectory;
         this.includes = includes;
         if ( overlay == null )
@@ -79,24 +81,17 @@ public class ConfigCatenationTask
         {
             try
             {
-                context.getLog().info( "Processing catenation on [" + overlay + "]" );
+                if (!context.getLog().isDebugEnabled()) {
+                    context.getLog().info("Processing catenation on [" + overlay + "]");
+                }
 
-                final File tmpDir;
-                if ( unpackRequired )
-                {
-                    // Step1: Extract if necessary
-                    tmpDir = unpackOverlay( context, overlay );
-                }
-                else
-                {
-                    tmpDir = context.getWebappSourceDirectory();
-                }
+                final File tmpDir = context.getWebappSourceDirectory();
 
                 // Step2: setup
                 final PathSet includes = getFilesToIncludes( tmpDir, this.includes, null,  false );
 
 
-                processFiles( overlay.getId(), context, tmpDir, includes, this.destinationDirectory );
+                processFiles( overlay, context, tmpDir, includes, this.destinationDirectory );
 
             }
             catch ( IOException e )
@@ -116,22 +111,31 @@ public class ConfigCatenationTask
      * parameter to specify in which particular directory the files should be copied. Use <tt>null</tt> to copy the
      * files with the same structure
      *
-     * @param sourceId       the source id
      * @param context        the context to use
      * @param sourceBaseDir  the base directory from which the <tt>sourceFilesSet</tt> will be copied
      * @param sourceFilesSet the files to be copied
      * @throws IOException            if an error occurred while copying the files
      * @throws MojoExecutionException if an error occurs.
      */
-    protected void processFiles( String sourceId, WarPackagingContext context, File sourceBaseDir,
+    protected void processFiles( Overlay source, WarPackagingContext context, File sourceBaseDir,
                                 PathSet sourceFilesSet, File outputFile )
             throws IOException, MojoExecutionException
     {
-        for ( String fileToCopyName : sourceFilesSet.paths() )
-        {
-            final File sourceFile = new File( sourceBaseDir, fileToCopyName );
-            processFile( sourceId, context, sourceFile, outputFile );
-
+        try {
+            for (String fileToCopyName : sourceFilesSet.paths()) {
+                if (!isRootPackage) {
+                    final File sourceFile = new File(this.getOverlayTempDirectory(context, overlay), fileToCopyName);
+                    if (sourceFile.exists()) {
+                        processFile(source, context, sourceFile, outputFile);
+                    }
+                } else {
+                    final File sourceFile = new File( sourceBaseDir, fileToCopyName );
+                    processFile( source, context, sourceFile, outputFile );
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 
@@ -140,20 +144,18 @@ public class ConfigCatenationTask
      * <p>
      * The <tt>targetFileName</tt> is the relative path according to the root of the generated web application.
      *
-     * @param sourceId       the source id
+     * @param source       the source id
      * @param context        the context to use
      * @param file           the file to copy
      * @throws IOException if an error occurred while copying
      */
     // CHECKSTYLE_OFF: LineLength
-    protected void processFile( String sourceId, final WarPackagingContext context, final File file, File targetFile )
+    protected void processFile( Overlay source, final WarPackagingContext context, final File file, File targetFile )
             throws IOException
     {
         if ( file.isFile() )
         {
-            context.getLog().info(  "Catenating "
-                    + file.getName()
-                    + " to " +  targetFile.getAbsolutePath().toString() );
+
             targetFile.getParentFile().mkdirs();
 
             // Charset for read and write
@@ -161,6 +163,18 @@ public class ConfigCatenationTask
 
 
             List<String> lines = Files.readAllLines( file.toPath(), charset );
+
+            final Log log = context.getLog();
+            if (log.isDebugEnabled()) {
+                log.debug(  " ===== CATENATE "
+                        + file.getAbsolutePath()
+                        + " to " +  targetFile.getAbsolutePath() + "=====" );
+                int i = 1;
+                for (String line : lines) {
+                    log.debug(i++ + ":"+line);
+                }
+            }
+
             Files.write( targetFile.toPath(), lines, charset, StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND );
         }
@@ -220,5 +234,26 @@ public class ConfigCatenationTask
             result.mkdirs();
         }
         return result;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        ConfigCatenationTask that = (ConfigCatenationTask) o;
+
+        return this.overlay.getGroupId().equals(that.overlay.getGroupId())
+                && this.overlay.getArtifactId().equals(that.overlay.getArtifactId());
+    }
+
+    @Override
+    public int hashCode() {
+        return this.toString().hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return this.overlay.getGroupId()+":"+ this.overlay.getArtifactId();
     }
 }

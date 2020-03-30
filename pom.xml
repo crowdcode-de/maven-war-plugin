@@ -25,12 +25,12 @@
   <parent>
     <artifactId>maven-plugins</artifactId>
     <groupId>org.apache.maven.plugins</groupId>
-    <version>33</version>
+    <version>34</version>
     <relativePath />
   </parent>
 
   <artifactId>maven-war-plugin</artifactId>
-  <version>3.2.4-PATCHED-2</version>
+  <version>3.2.4-PATCHED-5</version>
   <packaging>maven-plugin</packaging>
 
   <name>Apache Maven WAR Plugin</name>
@@ -157,6 +157,14 @@
       <version>2.1</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- https://mvnrepository.com/artifact/org.apache.maven.shared/maven-dependency-tree -->
+    <dependency>
+      <groupId>org.apache.maven.shared</groupId>
+      <artifactId>maven-dependency-tree</artifactId>
+      <version>3.0.1</version>
+    </dependency>
+
   </dependencies>
 
   <build>
@@ -168,12 +176,12 @@
     </resources>
     <pluginManagement>
       <plugins>
-<!--        <plugin>-->
-<!--          <artifactId>maven-checkstyle-plugin</artifactId>-->
-<!--          <configuration>-->
-<!--            <skip>true</skip>-->
-<!--          </configuration>-->
-<!--        </plugin>-->
+        <plugin>
+          <artifactId>maven-checkstyle-plugin</artifactId>
+          <configuration>
+            <skip>true</skip>
+          </configuration>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-enforcer-plugin</artifactId>

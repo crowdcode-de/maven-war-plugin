@@ -177,6 +177,8 @@ public class WarMojo
             return;
         }
 
+        super.execute();
+
         File warFile = getTargetWarFile();
 
         try

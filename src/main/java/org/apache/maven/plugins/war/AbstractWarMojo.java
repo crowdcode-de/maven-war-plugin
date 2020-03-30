@@ -26,15 +26,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.List;
+import java.util.*;
 
 import org.apache.maven.archiver.MavenArchiveConfiguration;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.factory.ArtifactFactory;
+import org.apache.maven.artifact.resolver.filter.ArtifactFilter;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.AbstractMojo;
@@ -44,14 +41,15 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.war.overlay.OverlayManager;
-import org.apache.maven.plugins.war.packaging.ConfigCatenationTask;
-import org.apache.maven.plugins.war.packaging.CopyUserManifestTask;
-import org.apache.maven.plugins.war.packaging.OverlayPackagingTask;
-import org.apache.maven.plugins.war.packaging.WarPackagingContext;
-import org.apache.maven.plugins.war.packaging.WarPackagingTask;
-import org.apache.maven.plugins.war.packaging.WarProjectPackagingTask;
+import org.apache.maven.plugins.war.packaging.*;
+import org.apache.maven.plugins.war.packaging.refs.DeepReference;
+import org.apache.maven.plugins.war.packaging.refs.DependencyReference;
+import org.apache.maven.plugins.war.packaging.refs.ShallowReference;
 import org.apache.maven.plugins.war.util.WebappStructure;
+import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectBuildingRequest;
+import org.apache.maven.shared.dependency.graph.DependencyNode;
 import org.apache.maven.shared.filtering.MavenFileFilter;
 import org.apache.maven.shared.filtering.MavenFilteringException;
 import org.apache.maven.shared.filtering.MavenResourcesExecution;
@@ -61,7 +59,8 @@ import org.apache.maven.shared.utils.io.FileUtils;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.jar.JarArchiver;
 import org.codehaus.plexus.archiver.manager.ArchiverManager;
-
+import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
+import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 /**
  * Contains common jobs for WAR mojos.
  */
@@ -125,7 +124,12 @@ public abstract class AbstractWarMojo
      */
     @Parameter( defaultValue = "${project.build.directory}/${project.build.finalName}", required = true )
     private File webappDirectory;
+    /**
+     * Contains the full list of projects in the reactor.
+     */
 
+    @Parameter( defaultValue = "${reactorProjects}", readonly = true, required = true )
+    private List<MavenProject> reactorProjects;
     /**
      * Single directory for extra files to include in the WAR. This is where you place your JSP files.
      */
@@ -239,7 +243,7 @@ public abstract class AbstractWarMojo
     private String warSourceExcludes;
 
     /**
-     * The comma separated list of tokens to include when doing a WAR overlay. Default is 
+     * The comma separated list of tokens to include when doing a WAR overlay. Default is
      * {@link org.apache.maven.plugins.war.Overlay#DEFAULT_INCLUDES}
      *
      */
@@ -247,7 +251,7 @@ public abstract class AbstractWarMojo
     private String dependentWarIncludes = StringUtils.join( Overlay.DEFAULT_INCLUDES, "," );
 
     /**
-     * The comma separated list of tokens to exclude when doing a WAR overlay. Default is 
+     * The comma separated list of tokens to exclude when doing a WAR overlay. Default is
      * {@link org.apache.maven.plugins.war.Overlay#DEFAULT_EXCLUDES}
      *
      */
@@ -387,6 +391,19 @@ public abstract class AbstractWarMojo
     @Parameter( required = false )
     private String catenationFinalizer;
 
+    /**
+     * When enabling this flag, you may choose "DFS" (deep fist search) strategy
+     * or "BFS" (broadth first search) strategy to control how the files are
+     * traversed
+     * <b>Disabled by default.</b>
+     *
+     * @since 3.2.4
+     */
+    @Parameter( required = false, defaultValue = "DFS" )
+    private String catenationSeekStrategy;
+
+    @Component( hint = "default" )
+    private DependencyGraphBuilder dependencyGraphBuilder;
 
     /**
      * The archive configuration to use. See <a href="http://maven.apache.org/shared/maven-archiver/index.html">Maven
@@ -396,6 +413,8 @@ public abstract class AbstractWarMojo
     private MavenArchiveConfiguration archive = new MavenArchiveConfiguration();
 
     private final Overlay currentProjectOverlay = Overlay.createInstance();
+
+    protected DependencyNode rootNode;
 
     /**
      * @return The current overlay.
@@ -461,6 +480,41 @@ public abstract class AbstractWarMojo
     protected String[] getDependentWarIncludes()
     {
         return StringUtils.split( StringUtils.defaultString( dependentWarIncludes ), "," );
+    }
+
+
+    public void execute() throws MojoExecutionException, MojoFailureException
+    {
+        ArtifactFilter artifactFilter = new ArtifactFilter( )
+        {
+            @Override
+            public boolean include( Artifact artifact )
+            {
+                return true;
+            }
+        };
+
+        String dependencyTreeString;
+
+        ProjectBuildingRequest buildingRequest =
+                new DefaultProjectBuildingRequest( session.getProjectBuildingRequest() );
+
+        buildingRequest.setProject( project );
+
+        // non-verbose mode use dependency graph component, which gives consistent results with Maven version
+        // running
+        try
+        {
+            rootNode = dependencyGraphBuilder.buildDependencyGraph( buildingRequest, artifactFilter , reactorProjects );
+            getLog()
+                    .info( "root node has "
+                            + rootNode.getChildren().size()
+                            + " child nodes" );
+        }
+        catch ( DependencyGraphBuilderException e )
+        {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -579,8 +633,13 @@ public abstract class AbstractWarMojo
         packagingTasks.add( new CopyUserManifestTask() );
 
         final List<Overlay> resolvedOverlays = overlayManager.getOverlays();
+        final HashMap<String, Overlay> overlayMap = new HashMap<>();
+
         for ( Overlay overlay : resolvedOverlays )
         {
+            overlayMap.put( overlay.getGroupId()
+                    + ":"
+                    + overlay.getArtifactId(), overlay );
             if ( overlay.isCurrentProject() )
             {
                 packagingTasks.add( new WarProjectPackagingTask( webResources, webXml, containerConfigXML,
@@ -598,27 +657,82 @@ public abstract class AbstractWarMojo
                 }
             }
 
-            if ( catenateConfig )
-            {
-                if ( !overlay.isCurrentProject() )
-                {
-                    catenationTasks.add( new ConfigCatenationTask( overlay, true, catenatedOutFile,
-                            catenationInfile ) );
-                }
-            }
         }
-        Collections.reverse( catenationTasks );
-        catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, false, catenatedOutFile,
+
+        File tmpOutFile = new File(catenatedOutFile.getAbsolutePath()+".tmpfile");
+
+        ShallowReference root = new ShallowReference(currentProjectOverlay,rootNode.getArtifact(), rootNode);
+        traverseTree(rootNode, root, overlayMap);
+        // FIXME
+        harvestTree(root, catenationTasks, overlayMap, tmpOutFile,"");
+
+        getLog().info("ADDED "+catenationTasks.size()+" CONFIGS TO PACKAGING");
+
+        // Collections.reverse( catenationTasks );
+        catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, true, tmpOutFile,
                 catenationInfile ) );
 
         if ( catenationFinalizer != null && !catenationFinalizer.trim().isEmpty() )
         {
-            catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, false, catenatedOutFile,
+            catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, true, tmpOutFile,
                     catenationFinalizer ) ) ;
         }
         packagingTasks.addAll( catenationTasks );
+        packagingTasks.add(new FinishCatenationTask(tmpOutFile, catenatedOutFile));
 
         return packagingTasks;
+    }
+
+
+    private void traverseTree(DependencyNode parentNode, DependencyReference refNode, final HashMap<String, Overlay> overlayMap){
+        final List<DependencyNode> children = new ArrayList<>();
+        children.addAll(parentNode.getChildren());
+        List<DependencyReference> childRefs = new LinkedList<>();
+        for (DependencyNode child : children) {
+            Artifact artifact = child.getArtifact();
+            Overlay overlay = overlayMap.get(artifact.getGroupId() + ":" + artifact.getArtifactId());
+            ShallowReference ref = new ShallowReference(overlay, artifact, child);
+
+            getLog().debug( " ADD " + artifact.getGroupId() + ":" + artifact.getArtifactId());
+
+            if (childRefs.contains(ref)){
+                int index = childRefs.indexOf(ref);
+                ShallowReference reference = (ShallowReference) childRefs.get(index);
+                childRefs.remove(index);
+                childRefs.add(index, new DeepReference(artifact, child, reference,overlay));
+            } else {
+                childRefs.add(ref);
+            }
+        }
+        refNode.addChildren(childRefs);
+
+        for (DependencyReference ref: childRefs) {
+            traverseTree(ref.getNode(), ref, overlayMap);
+        }
+    }
+
+    private void harvestTree(DependencyReference node, List<WarPackagingTask> list, final HashMap<String, Overlay> overlayMap, File outFile, String suffix){
+        getLog().debug(suffix +  " ENTER " + node.getArtifact().getGroupId() + ":" + node.getArtifact().getArtifactId());
+
+        for (DependencyReference child : node.getChildren()) {
+                Artifact artifact = child.getArtifact();
+                Overlay overlay = overlayMap.get(artifact.getGroupId() + ":" + artifact.getArtifactId());
+
+                harvestTree(child, list, overlayMap, outFile, "-" + suffix);
+
+                if (overlay != null) {
+                    ConfigCatenationTask configCatenationTask = new ConfigCatenationTask(overlay, false, outFile, catenationInfile);
+                    if (!list.contains(configCatenationTask)) {
+                        if (!list.contains(configCatenationTask)) {
+                            list.add(configCatenationTask);
+                            getLog().info(suffix + " ADD " + overlay.getGroupId() + ":" + overlay.getArtifactId());
+                        }
+                    }
+                }
+
+
+        }
+        getLog().debug(suffix + " EXITING " + node.getArtifact().getGroupId() + ":" + node.getArtifact().getArtifactId());
     }
 
     /**
