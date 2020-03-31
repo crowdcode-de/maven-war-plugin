@@ -424,6 +424,10 @@ public abstract class AbstractWarMojo
         return currentProjectOverlay;
     }
 
+    private interface Harvester {
+        WarPackagingTask harvest(DependencyReference ref, Overlay overlay);
+    }
+
     /**
      * Returns a string array of the excludes to be used when copying the content of the WAR source directory.
      *
@@ -635,40 +639,60 @@ public abstract class AbstractWarMojo
         final List<Overlay> resolvedOverlays = overlayManager.getOverlays();
         final HashMap<String, Overlay> overlayMap = new HashMap<>();
 
+        // 1. Create overlay map
         for ( Overlay overlay : resolvedOverlays )
         {
             overlayMap.put( overlay.getGroupId()
                     + ":"
                     + overlay.getArtifactId(), overlay );
-            if ( overlay.isCurrentProject() )
-            {
-                packagingTasks.add( new WarProjectPackagingTask( webResources, webXml, containerConfigXML,
-                        currentProjectOverlay ) );
-            }
-            else
-            {
-                if ( !disableOverlaying )
+        }
+
+        // 2. Build harmonized tree
+        ShallowReference root = new ShallowReference(currentProjectOverlay,rootNode.getArtifact(), rootNode);
+        traverseTree(rootNode, root, overlayMap);
+
+
+        // 3. Harvest overlays
+        Harvester overlayHarvester = new Harvester() {
+            @Override
+            public WarPackagingTask harvest(DependencyReference ref, final Overlay overlay) {
+                final WarPackagingTask packagingTask;
+                if ( overlay.isCurrentProject() )
                 {
-                   packagingTasks.add( new OverlayPackagingTask( overlay, currentProjectOverlay ) );
+                    packagingTask = new WarProjectPackagingTask( webResources, webXml, containerConfigXML,
+                            currentProjectOverlay );
                 }
                 else
                 {
-                    getLog().info( "Overlaying disabled: Skipped " + overlay.getArtifactId() );
+                    if ( !disableOverlaying )
+                    {
+                        packagingTask = new OverlayPackagingTask( overlay, currentProjectOverlay );
+                    }
+                    else
+                    {
+                        packagingTask = null;
+                        getLog().info( "Overlaying disabled: Skipped " + overlay.getArtifactId() );
+                    }
                 }
+                return packagingTask;
             }
+        };
+        harvestTree(overlayHarvester, root, catenationTasks, overlayMap,"");
 
-        }
-
-        File tmpOutFile = new File(catenatedOutFile.getAbsolutePath()+".tmpfile");
-
-        ShallowReference root = new ShallowReference(currentProjectOverlay,rootNode.getArtifact(), rootNode);
-        traverseTree(rootNode, root, overlayMap);
-        // FIXME
-        harvestTree(root, catenationTasks, overlayMap, tmpOutFile,"");
+        // 4. Harvest catenation tasks
+        final File tmpOutFile = new File(catenatedOutFile.getAbsolutePath()+".tmpfile");
+        Harvester catenationHarvester = new Harvester() {
+            @Override
+            public WarPackagingTask harvest(DependencyReference ref, Overlay overlay) {
+                ConfigCatenationTask task = new ConfigCatenationTask(overlay, false, tmpOutFile, catenationInfile);
+                return task;
+            }
+        };
+        harvestTree(catenationHarvester, root, catenationTasks, overlayMap,"");
 
         getLog().info("ADDED "+catenationTasks.size()+" CONFIGS TO PACKAGING");
 
-        // Collections.reverse( catenationTasks );
+        // Finalize
         catenationTasks.add( new ConfigCatenationTask( currentProjectOverlay, true, tmpOutFile,
                 catenationInfile ) );
 
@@ -711,20 +735,21 @@ public abstract class AbstractWarMojo
         }
     }
 
-    private void harvestTree(DependencyReference node, List<WarPackagingTask> list, final HashMap<String, Overlay> overlayMap, File outFile, String suffix){
+    private void harvestTree(Harvester harvester, DependencyReference node, List<WarPackagingTask> list, final HashMap<String, Overlay> overlayMap, String suffix){
         getLog().debug(suffix +  " ENTER " + node.getArtifact().getGroupId() + ":" + node.getArtifact().getArtifactId());
 
         for (DependencyReference child : node.getChildren()) {
                 Artifact artifact = child.getArtifact();
                 Overlay overlay = overlayMap.get(artifact.getGroupId() + ":" + artifact.getArtifactId());
 
-                harvestTree(child, list, overlayMap, outFile, "-" + suffix);
+                harvestTree(harvester, child, list, overlayMap, "-" + suffix);
 
                 if (overlay != null) {
-                    ConfigCatenationTask configCatenationTask = new ConfigCatenationTask(overlay, false, outFile, catenationInfile);
-                    if (!list.contains(configCatenationTask)) {
-                        if (!list.contains(configCatenationTask)) {
-                            list.add(configCatenationTask);
+                    // ConfigCatenationTask task = new ConfigCatenationTask(overlay, false, outFile, catenationInfile);
+                    WarPackagingTask task = harvester.harvest(child, overlay);
+                    if (task != null && !list.contains(task)) {
+                        if (!list.contains(task)) {
+                            list.add(task);
                             getLog().info(suffix + " ADD " + overlay.getGroupId() + ":" + overlay.getArtifactId());
                         }
                     }

@@ -30,7 +30,7 @@
   </parent>
 
   <artifactId>maven-war-plugin</artifactId>
-  <version>3.2.4-PATCHED-5</version>
+  <version>3.2.4-PATCHED-6</version>
   <packaging>maven-plugin</packaging>
 
   <name>Apache Maven WAR Plugin</name>
